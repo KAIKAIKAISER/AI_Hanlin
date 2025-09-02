@@ -1,0 +1,62 @@
+name: Build and Sign IPA
+
+on:
+  # 允许你从 Actions 标签页手动触发这个工作流
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest # 使用最新的 macOS 虚拟机
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Xcode
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: '15.3' # 可以指定项目兼容的 Xcode 版本
+
+    - name: Decode P12 and Provisioning Profile
+      run: |
+        echo "${{ secrets.P12_BASE64 }}" | base64 --decode > certificate.p12
+        echo "${{ secrets.MOBILEPROVISION_BASE64 }}" | base64 --decode > profile.mobileprovision
+
+    - name: Create Keychain and Import Certificate
+      run: |
+        # 创建一个临时的 Keychain
+        security create-keychain -p "temp_keychain_password" build.keychain
+        security default-keychain -s build.keychain
+        security unlock-keychain -p "temp_keychain_password" build.keychain
+        
+        # 导入 P12 证书到 Keychain
+        security import certificate.p12 -k build.keychain -P "${{ secrets.P12_PASSWORD }}" -A
+        
+        # 允许 codesign 工具访问证书
+        security set-key-partition-list -S apple-tool:,apple: -s -k "temp_keychain_password" build.keychain
+
+    - name: Install Provisioning Profile
+      run: |
+        mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+        cp profile.mobileprovision "$HOME/Library/MobileDevice/Provisioning Profiles/$(uuidgen).mobileprovision"
+
+    - name: Build and Archive
+      run: |
+        xcodebuild -project AI_HLY.xcodeproj -scheme AI_HLY -configuration Release \
+                   -archivePath build/AI_HLY.xcarchive archive \
+                   CODE_SIGN_STYLE="Manual" \
+                   DEVELOPMENT_TEAM="${{ secrets.TEAM_ID }}" \
+                   CODE_SIGN_IDENTITY="Apple Distribution" # 或者 "Apple Development"
+                   PROVISIONING_PROFILE_SPECIFIER="AI_Hanlin_Development" # 替换为你的 provision profile name
+
+    - name: Export IPA
+      run: |
+        xcodebuild -exportArchive -archivePath build/AI_HLY.xcarchive \
+                   -exportPath build/ipa \
+                   -exportOptionsPlist ExportOptions.plist
+
+    - name: Upload IPA Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: AI-Hanlin-IPA
+        path: build/ipa/*.ipa

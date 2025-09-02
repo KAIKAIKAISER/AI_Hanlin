@@ -15,7 +15,7 @@ jobs:
     - name: Setup Xcode
       uses: maxim-lobanov/setup-xcode@v1
       with:
-        xcode-version: '15.3' # 可以指定项目兼容的 Xcode 版本
+        xcode-version: '16.4' # 可以指定项目兼容的 Xcode 版本
 
     - name: Decode P12 and Provisioning Profile
       run: |
